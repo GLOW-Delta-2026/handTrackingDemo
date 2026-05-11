@@ -60,16 +60,22 @@ The first run prompts for camera access — grant it.
 
 Tested on Windows 11 with a built-in webcam. The whole flow runs inside the **MSYS2 MINGW64** shell — same script as macOS, no PowerShell, no MSVC, no special env vars.
 
-> **Use the right terminal.** Install [MSYS2](https://www.msys2.org/), then launch **"MSYS2 MINGW64"** from the Start menu — *not* PowerShell, *not* "MSYS2 MSYS", *not* "MSYS2 UCRT64". The prompt should show `MINGW64` in green. Every command below runs in that shell.
+> **Use the right terminal.** Install [MSYS2](https://www.msys2.org/), then launch **"MSYS2 MINGW64"** from the Start menu — *not* PowerShell, *not* "MSYS2 MSYS", *not* "MSYS2 UCRT64", *not* "MSYS2 CLANGARM64". The prompt should show `MINGW64` in green. Every command below runs in that shell.
 
 ```bash
+# 0. Refresh MSYS2 first — a fresh install ships with a stale package db.
+#    Run twice if it asks you to close the terminal mid-way:
+pacman -Syu
+# (close the shell if prompted, reopen MSYS2 MINGW64, then re-run pacman -Syu)
+pacman -Syu
+
 # 1. Install Go + OpenCV + toolchain (precompiled, ~3–5 min):
 pacman -S --needed \
   mingw-w64-x86_64-go \
   mingw-w64-x86_64-toolchain \
   mingw-w64-x86_64-cmake \
   mingw-w64-x86_64-opencv \
-  mingw-w64-x86_64-pkg-config \
+  mingw-w64-x86_64-pkgconf \
   git
 
 # 2. Clone and build TFLite (~10–15 min one-time):
@@ -92,7 +98,9 @@ Then open <http://localhost:8080>.
 ### Troubleshooting
 
 - **`go: command not found` or `'go' is not recognized`** — You're in the wrong terminal. Close it and open "MSYS2 MINGW64" from the Start menu. Confirm the prompt shows `MINGW64`. If `which go` still finds nothing inside MINGW64, you skipped `pacman -S mingw-w64-x86_64-go` above.
-- **`pkg-config: command not found`** — Same cause; you missed `mingw-w64-x86_64-pkg-config` in the pacman line.
+- **`pkg-config: command not found`** — Same cause; you missed `mingw-w64-x86_64-pkgconf` in the pacman line.
+- **`could not satisfy dependencies … mingw-w64-x86_64-pkg-config`** — Old package name. The current MSYS2 name is `mingw-w64-x86_64-pkgconf` (no hyphen). Use that.
+- **`failed to prepare transaction` / `could not satisfy dependencies`** — A fresh MSYS2 install ships with a stale package database. Run `pacman -Syu` first (twice if it asks you to close the terminal mid-way), then re-run the install line.
 - **gocv `cannot find -lopencv_*`** — `mingw-w64-x86_64-opencv` didn't install. Re-run the pacman line.
 
 ---
