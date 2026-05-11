@@ -133,7 +133,9 @@ This uses the cross-platform Makefile, which on Windows sets the right `-tags cu
 
 ### Step 4 — Run
 
-Still inside **MSYS2 MINGW64**:
+`make build` now also copies every MinGW/OpenCV runtime DLL the exe depends on into the same directory, so you can run it from **any** shell or by double-clicking `handtracking.exe` in Explorer.
+
+From **MSYS2 MINGW64**, **CMD**, or **PowerShell**:
 
 ```bash
 ./handtracking.exe

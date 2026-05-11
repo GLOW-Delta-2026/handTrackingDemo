@@ -55,6 +55,11 @@ build:
 	go build $(BUILD_TAGS) -o $(EXE) .
 ifneq ($(IS_WINDOWS),)
 	@cp -u $(TFLITE_DIR)/lib/libtensorflowlite_c.dll . 2>/dev/null || cp $(TFLITE_DIR)/lib/libtensorflowlite_c.dll .
+	@echo "Bundling MinGW runtime + OpenCV DLLs next to $(EXE)..."
+	@ldd $(EXE) 2>/dev/null | awk '/=> \/mingw64\/bin\// {print $$3}' | sort -u | while read -r dll; do \
+	   cp -u "$$dll" . 2>/dev/null || cp "$$dll" .; \
+	done
+	@echo "Done. Run with:  ./$(EXE)   (from this directory, or double-click handtracking.exe)"
 endif
 
 run: build
