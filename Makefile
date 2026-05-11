@@ -59,6 +59,16 @@ ifneq ($(IS_WINDOWS),)
 	@ldd $(EXE) 2>/dev/null | awk '/=> \/mingw64\/bin\// {print $$3}' | sort -u | while read -r dll; do \
 	   cp -u "$$dll" . 2>/dev/null || cp "$$dll" .; \
 	done
+	@echo "Bundling Qt6 runtime (lazy-loaded by OpenCV highgui)..."
+	@for dll in /mingw64/bin/Qt6*.dll; do \
+	   [ -f "$$dll" ] && (cp -u "$$dll" . 2>/dev/null || cp "$$dll" .); \
+	done
+	@mkdir -p platforms imageformats styles
+	@for d in platforms imageformats styles; do \
+	   for plug in /mingw64/share/qt6/plugins/$$d/*.dll; do \
+	      [ -f "$$plug" ] && (cp -u "$$plug" $$d/ 2>/dev/null || cp "$$plug" $$d/); \
+	   done; \
+	done
 	@echo "Done. Run with:  ./$(EXE)   (from this directory, or double-click handtracking.exe)"
 endif
 
