@@ -1,0 +1,29 @@
+# Build outputs
+/handtracking
+/handtracking.exe
+/palmprobe
+/constprobe
+/probe
+/dist/
+*.exe
+
+# Editor / OS
+.vscode/
+.idea/
+.claude/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Captured training data (overwritten each logging session)
+model/keypoint_classifier/keypoint.csv
+model/point_history_classifier/point_history.csv
+
+# Unused MediaPipe variants — keep the repo light.
+model/mediapipe/*.bak.tflite
+model/mediapipe/hand_landmarker.task
+model/mediapipe/tasks/
+
+# Vendored TFLite build artifacts (regenerated via scripts/install-tflite.sh).
+# Underscore prefix keeps `go build ./...` from recursing into them.
+/_third_party/

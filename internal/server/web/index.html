@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quantum Waves — live</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #e9eef3; font: 13px/1.4 -apple-system, system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  #hud { position: fixed; left: 12px; top: 12px; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 8px; backdrop-filter: blur(6px); pointer-events: none; }
+  #hud .row { display: flex; gap: 10px; }
+  #hud .row span:first-child { opacity: 0.55; min-width: 70px; }
+  #orbital { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; color: #ffb347; margin-bottom: 4px; }
+  #decay.pulse { color: #ff8050; font-weight: 600; }
+  #status { position: fixed; right: 12px; top: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.04); }
+  #status.ok { color: #ffb347; }
+  #status.dead { color: #ff7b7b; }
+  #legend { position: fixed; right: 12px; bottom: 12px; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 8px; pointer-events: none; }
+  #legend .li { display: flex; align-items: center; gap: 8px; }
+  #legend .sw { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div id="orbital">1s</div>
+  <div class="row"><span>n,l,m</span><span id="nlm">1, 0, 0</span></div>
+  <div class="row"><span>complexity</span><span id="cplx">0 / 17</span></div>
+  <div class="row"><span>decay</span><span id="decay">stable</span></div>
+  <div class="row"><span>sign</span><span id="sign">—</span></div>
+  <div class="row"><span>gesture</span><span id="gesture">—</span></div>
+  <div class="row"><span>fps</span><span id="fps">—</span></div>
+  <div class="row"><span>eaten</span><span id="score">0</span></div>
+</div>
+<div id="legend">
+  <div class="li"><span class="sw" style="background:#7bcfff"></span><span>+1 quantum</span></div>
+  <div class="li"><span class="sw" style="background:#b7ff7b"></span><span>+2 quanta</span></div>
+  <div class="li"><span class="sw" style="background:#ffd47b"></span><span>+3 quanta</span></div>
+  <div class="li"><span class="sw" style="background:#ff7be3"></span><span>+4 quanta</span></div>
+</div>
+<div id="status" class="dead">disconnected</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize); resize();
+
+  const elOrbital = document.getElementById('orbital');
+  const elNLM = document.getElementById('nlm');
+  const elCplx = document.getElementById('cplx');
+  const elDecay = document.getElementById('decay');
+  const elSign = document.getElementById('sign');
+  const elGesture = document.getElementById('gesture');
+  const elFPS = document.getElementById('fps');
+  const elScore = document.getElementById('score');
+  const elStatus = document.getElementById('status');
+
+  // ============================================================
+  // Tunables
+  // ============================================================
+  const DECAY_INTERVAL = 6.0; // seconds between collapse steps
+  const PULSE_PRE      = 1.8; // last N seconds before collapse: pulse warning
+  const TRANSITION_SEC = 0.7; // crossfade duration on eat / collapse
+
+  // ============================================================
+  // Hydrogen |ψ_nlm|² — radial and angular components
+  // ============================================================
+  function radialPsi2(r, n, l) {
+    let p;
+    if (n === 1)                 p = 1;
+    else if (n === 2 && l === 0) p = (1 - r / 2);
+    else if (n === 2 && l === 1) p = r;
+    else if (n === 3 && l === 0) p = (1 - 2 * r / 3 + 2 * r * r / 27);
+    else if (n === 3 && l === 1) p = r * (1 - r / 6);
+    else if (n === 3 && l === 2) p = r * r;
+    else if (n === 4 && l === 0) p = (1 - 3 * r / 4 + r * r / 8 - r * r * r / 192);
+    else if (n === 4 && l === 1) p = r * (1 - r / 4 + r * r / 80);
+    else if (n === 4 && l === 2) p = r * r * (1 - r / 12);
+    else if (n === 4 && l === 3) p = r * r * r;
+    else p = 1;
+    const v = p * Math.exp(-r / n);
+    return v * v;
+  }
+
+  function angularPsi2(theta, l, m) {
+    const c = Math.cos(theta), s = Math.sin(theta);
+    const am = Math.abs(m);
+    if (l === 0) return 1;
+    if (l === 1) return am === 0 ? c * c : s * s;
+    if (l === 2) {
+      if (am === 0) { const v = 3 * c * c - 1; return v * v; }
+      if (am === 1) return 4 * s * s * c * c;
+      return s * s * s * s;
+    }
+    if (l === 3) {
+      if (am === 0) { const v = c * (5 * c * c - 3); return v * v; }
+      if (am === 1) { const v = s * (5 * c * c - 1); return v * v; }
+      if (am === 2) return s * s * c * c;
+      return Math.pow(s, 6);
+    }
+    return 1;
+  }
+
+  // ============================================================
+  // Magma colormap
+  // ============================================================
+  const MAGMA = [
+    [0.00,   0,   0,   4],
+    [0.08,  18,   8,  50],
+    [0.18,  55,  18, 100],
+    [0.32, 130,  30, 100],
+    [0.46, 210,  55,  60],
+    [0.60, 245, 100,  30],
+    [0.74, 255, 165,  35],
+    [0.87, 255, 215,  80],
+    [1.00, 255, 255, 220],
+  ];
+  function magmaColor(t, out) {
+    if (t <= 0) { out[0] = MAGMA[0][1]; out[1] = MAGMA[0][2]; out[2] = MAGMA[0][3]; return; }
+    if (t >= 1) { const e = MAGMA[MAGMA.length - 1]; out[0] = e[1]; out[1] = e[2]; out[2] = e[3]; return; }
+    let i = 0;
+    while (i < MAGMA.length - 2 && MAGMA[i + 1][0] < t) i++;
+    const lo = MAGMA[i], hi = MAGMA[i + 1];
+    const f = (t - lo[0]) / (hi[0] - lo[0]);
+    out[0] = lo[1] + (hi[1] - lo[1]) * f;
+    out[1] = lo[2] + (hi[2] - lo[2]) * f;
+    out[2] = lo[3] + (hi[3] - lo[3]) * f;
+  }
+
+  // ============================================================
+  // Bake an orbital to an offscreen canvas (once per (n,l,m))
+  // ============================================================
+  function bakeOrbital(n, l, m) {
+    const size = 240;
+    const off = document.createElement('canvas');
+    off.width = size; off.height = size;
+    const cctx = off.getContext('2d');
+    const img = cctx.createImageData(size, size);
+    const px = img.data;
+
+    const rMax = 1.6 * n * n + 3;
+    const scale = (size / 2) / rMax;
+    const half = size / 2;
+
+    const grid = new Float32Array(size * size);
+    let maxV = 0;
+    for (let y = 0; y < size; y++) {
+      const dy = (y - half) / scale;
+      for (let x = 0; x < size; x++) {
+        const dx = (x - half) / scale;
+        const r = Math.hypot(dx, dy);
+        const theta = Math.atan2(dy, dx);
+        const v = radialPsi2(r, n, l) * angularPsi2(theta, l, m);
+        grid[y * size + x] = v;
+        if (v > maxV) maxV = v;
+      }
+    }
+
+    const gamma = 0.4;
+    const invMax = 1 / Math.max(maxV, 1e-12);
+    const rgb = [0, 0, 0];
+    for (let i = 0, p = 0; i < grid.length; i++, p += 4) {
+      const t = Math.pow(grid[i] * invMax, gamma);
+      magmaColor(t, rgb);
+      px[p]     = rgb[0];
+      px[p + 1] = rgb[1];
+      px[p + 2] = rgb[2];
+      px[p + 3] = Math.min(255, t * 280);
+    }
+    cctx.putImageData(img, 0, 0);
+    return { canvas: off, size };
+  }
+
+  const orbitalCache = new Map();
+  function getOrbital(n, l, m) {
+    const key = `${n}.${l}.${m}`;
+    let o = orbitalCache.get(key);
+    if (!o) { o = bakeOrbital(n, l, m); orbitalCache.set(key, o); }
+    return o;
+  }
+
+  // ============================================================
+  // Complexity chain — simple → complex, walked back by decay,
+  // forward by eats.
+  // ============================================================
+  const COMPLEXITY_CHAIN = [
+    { n: 1, l: 0, m: 0 }, // 1s
+    { n: 2, l: 0, m: 0 }, // 2s
+    { n: 2, l: 1, m: 0 }, // 2p_z
+    { n: 2, l: 1, m: 1 }, // 2p_xy
+    { n: 3, l: 0, m: 0 }, // 3s
+    { n: 3, l: 1, m: 0 }, // 3p_z
+    { n: 3, l: 1, m: 1 }, // 3p_xy
+    { n: 3, l: 2, m: 0 }, // 3d_z²
+    { n: 3, l: 2, m: 1 }, // 3d_xz
+    { n: 3, l: 2, m: 2 }, // 3d_x²-y²
+    { n: 4, l: 0, m: 0 }, // 4s
+    { n: 4, l: 1, m: 0 }, // 4p_z
+    { n: 4, l: 1, m: 1 }, // 4p_xy
+    { n: 4, l: 2, m: 0 }, // 4d_z²
+    { n: 4, l: 2, m: 1 }, // 4d_xz
+    { n: 4, l: 2, m: 2 }, // 4d_x²-y²
+    { n: 4, l: 3, m: 0 }, // 4f_z³
+    { n: 4, l: 3, m: 1 }, // 4f_xz²
+  ];
+  const CHAIN_LAST = COMPLEXITY_CHAIN.length - 1;
+
+  function clampIdx(i) { return Math.max(0, Math.min(CHAIN_LAST, i)); }
+  function stateAt(i) { return COMPLEXITY_CHAIN[clampIdx(i)]; }
+  function orbitalAt(i) { const s = stateAt(i); return getOrbital(s.n, s.l, s.m); }
+
+  function orbitalName(s) {
+    const letters = ['s', 'p', 'd', 'f'];
+    let suffix = '';
+    if (s.l === 1) suffix = s.m === 0 ? '_z' : '_xy';
+    else if (s.l === 2) {
+      if (s.m === 0) suffix = '_z²';
+      else if (Math.abs(s.m) === 1) suffix = '_xz';
+      else suffix = '_x²-y²';
+    } else if (s.l === 3) {
+      suffix = s.m === 0 ? '_z³' : '_·';
+    }
+    return `${s.n}${letters[s.l] || '?'}${suffix}`;
+  }
+
+  // Pre-bake the first few states so the early experience is hitch-free.
+  for (let i = 0; i < 6; i++) orbitalAt(i);
+
+  // ============================================================
+  // Main orb
+  // ============================================================
+  const main = {
+    x: W / 2, y: H / 2, vx: 0, vy: 0,
+    targetX: W / 2, targetY: H / 2,
+    sign: '',
+    chainIdx: 0,
+    decayT: 0,
+    transitionT: 1,        // 1 = settled, < 1 = crossfade in progress
+    prevOrbital: null,
+    rotation: 0,
+    sizeScale: 1,
+  };
+  let warm = false;
+  let score = 0;
+
+  function setChain(newIdx) {
+    newIdx = clampIdx(newIdx);
+    if (newIdx === main.chainIdx) return;
+    main.prevOrbital = orbitalAt(main.chainIdx);
+    main.chainIdx = newIdx;
+    main.transitionT = 0;
+    refreshHUD();
+  }
+
+  function refreshHUD() {
+    const s = stateAt(main.chainIdx);
+    elOrbital.textContent = orbitalName(s);
+    elNLM.textContent = `${s.n}, ${s.l}, ${s.m}`;
+    elCplx.textContent = `${main.chainIdx} / ${CHAIN_LAST}`;
+  }
+
+  const STIFFNESS = 80;
+  const DAMPING = 2 * Math.sqrt(STIFFNESS);
+  function springStep(pos, vel, target, dt) {
+    const ax = (target - pos) * STIFFNESS - vel * DAMPING;
+    vel += ax * dt; pos += vel * dt;
+    return [pos, vel];
+  }
+
+  // ============================================================
+  // Small "quantum" orbs — each advances the chain by `step`.
+  // Lobe count visually communicates the magnitude.
+  // ============================================================
+  const ORB_TYPES = [
+    { name: '+1', color: '#7bcfff', lobes: 2, amp: 0.18, step: 1 },
+    { name: '+2', color: '#b7ff7b', lobes: 3, amp: 0.16, step: 2 },
+    { name: '+3', color: '#ffd47b', lobes: 4, amp: 0.14, step: 3 },
+    { name: '+4', color: '#ff7be3', lobes: 5, amp: 0.18, step: 4 },
+  ];
+  const orbs = [];
+  const pulses = [];
+  const MAX_ORBS = 10;
+  const SPAWN_RANGE_MS = [2000, 3800];
+  let nextSpawn = 0;
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function spawnOrb() {
+    const type = ORB_TYPES[Math.floor(Math.random() * ORB_TYPES.length)];
+    const r = rand(22, 36);
+    const side = Math.floor(Math.random() * 4);
+    const speed = rand(28, 60);
+    let x, y, vx, vy;
+    if (side === 0)      { x = rand(0, W); y = -r;       vx = rand(-20, 20); vy = speed; }
+    else if (side === 1) { x = W + r;     y = rand(0, H); vx = -speed;       vy = rand(-20, 20); }
+    else if (side === 2) { x = rand(0, W); y = H + r;    vx = rand(-20, 20); vy = -speed; }
+    else                  { x = -r;         y = rand(0, H); vx = speed;       vy = rand(-20, 20); }
+    orbs.push({ x, y, vx, vy, r, type, phase: Math.random() * Math.PI * 2 });
+  }
+
+  // ============================================================
+  // Frame loop
+  // ============================================================
+  let lastT = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+    const t = now / 1000;
+
+    // main spring
+    [main.x, main.vx] = springStep(main.x, main.vx, main.targetX, dt);
+    [main.y, main.vy] = springStep(main.y, main.vy, main.targetY, dt);
+    main.rotation += dt * 0.2;
+
+    // transition crossfade progress
+    if (main.transitionT < 1) {
+      main.transitionT = Math.min(1, main.transitionT + dt / TRANSITION_SEC);
+      if (main.transitionT >= 1) main.prevOrbital = null;
+    }
+
+    // decay timer (only ticks when not in mid-transition, so a freshly-eaten
+    // orbital doesn't immediately start its decay clock at the wrong moment)
+    if (main.transitionT >= 1 && main.chainIdx > 0) {
+      main.decayT += dt;
+      if (main.decayT >= DECAY_INTERVAL) {
+        // commit the collapse: step one rung down the chain
+        setChain(main.chainIdx - 1);
+        main.decayT = 0;
+      }
+    }
+
+    // pulse phase = last PULSE_PRE seconds before next collapse
+    const inPulse = main.chainIdx > 0 && main.transitionT >= 1 &&
+                    main.decayT >= (DECAY_INTERVAL - PULSE_PRE);
+
+    // small orbs motion
+    for (const o of orbs) {
+      o.x += o.vx * dt; o.y += o.vy * dt;
+      const m = o.r + 2;
+      if (o.x < m && o.vx < 0) o.vx = -o.vx;
+      if (o.x > W - m && o.vx > 0) o.vx = -o.vx;
+      if (o.y < m && o.vy < 0) o.vy = -o.vy;
+      if (o.y > H - m && o.vy > 0) o.vy = -o.vy;
+      o.phase += dt * 1.5;
+    }
+
+    // pairwise collisions
+    for (let i = 0; i < orbs.length; i++) {
+      for (let j = i + 1; j < orbs.length; j++) {
+        const a = orbs[i], b = orbs[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy);
+        const minD = a.r + b.r;
+        if (d > 0.001 && d < minD) {
+          const nx = dx / d, ny = dy / d;
+          const overlap = (minD - d) / 2;
+          a.x -= nx * overlap; a.y -= ny * overlap;
+          b.x += nx * overlap; b.y += ny * overlap;
+          const v1n = a.vx * nx + a.vy * ny;
+          const v2n = b.vx * nx + b.vy * ny;
+          const delta = v2n - v1n;
+          a.vx += delta * nx; a.vy += delta * ny;
+          b.vx -= delta * nx; b.vy -= delta * ny;
+        }
+      }
+    }
+
+    const vizR = (62 + 18 * stateAt(main.chainIdx).n) * main.sizeScale;
+
+    // eat detection — also drives the chain forward
+    for (let i = orbs.length - 1; i >= 0; i--) {
+      const o = orbs[i];
+      const dx = o.x - main.x, dy = o.y - main.y;
+      if (Math.hypot(dx, dy) < vizR * 0.55 + o.r * 0.4) {
+        orbs.splice(i, 1);
+        score++;
+        elScore.textContent = score;
+        pulses.push({ x: main.x, y: main.y, t: 0, color: o.type.color });
+        // advance along the chain; cancels any in-progress pulse phase
+        // since the decay timer is reset. If already saturated, just refresh.
+        setChain(main.chainIdx + o.type.step);
+        main.decayT = 0;
+      }
+    }
+
+    // pulse rings fade
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      pulses[i].t += dt / 0.55;
+      if (pulses[i].t >= 1) pulses.splice(i, 1);
+    }
+
+    if (now > nextSpawn && orbs.length < MAX_ORBS) {
+      spawnOrb();
+      nextSpawn = now + rand(SPAWN_RANGE_MS[0], SPAWN_RANGE_MS[1]);
+    }
+
+    // HUD decay info
+    if (main.chainIdx === 0) {
+      elDecay.textContent = 'stable';
+      elDecay.className = '';
+    } else if (inPulse) {
+      const s = Math.max(0, DECAY_INTERVAL - main.decayT);
+      elDecay.textContent = `collapsing! ${s.toFixed(1)}s`;
+      elDecay.className = 'pulse';
+    } else {
+      const s = Math.max(0, DECAY_INTERVAL - main.decayT);
+      elDecay.textContent = `${s.toFixed(1)}s`;
+      elDecay.className = '';
+    }
+
+    // ---- draw ----
+    ctx.clearRect(0, 0, W, H);
+    drawSmallOrbs(t);
+    drawPulses();
+    drawMain(t, vizR, inPulse, now);
+
+    requestAnimationFrame(frame);
+  }
+
+  function drawSmallOrbs(t) {
+    for (const o of orbs) {
+      const { lobes, color, amp } = o.type;
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 22;
+      ctx.beginPath();
+      const segs = 64;
+      for (let i = 0; i <= segs; i++) {
+        const a = i / segs * Math.PI * 2;
+        const rMod = 1 + amp * Math.sin(lobes * a + o.phase);
+        const x = o.x + o.r * rMod * Math.cos(a);
+        const y = o.y + o.r * rMod * Math.sin(a);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      const g = ctx.createRadialGradient(o.x - o.r * 0.3, o.y - o.r * 0.3, 1, o.x, o.y, o.r * 1.1);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.4, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.beginPath();
+      const segs2 = 48;
+      for (let i = 0; i <= segs2; i++) {
+        const a = i / segs2 * Math.PI * 2;
+        const rIn = o.r * 0.55 * (1 + 0.25 * Math.sin(lobes * a - o.phase * 1.4));
+        const x = o.x + rIn * Math.cos(a);
+        const y = o.y + rIn * Math.sin(a);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawPulses() {
+    for (const p of pulses) {
+      const rNow = 30 + 160 * p.t;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rNow, 0, Math.PI * 2);
+      ctx.strokeStyle = p.color;
+      ctx.globalAlpha = 1 - p.t;
+      ctx.lineWidth = 6 * (1 - p.t) + 1;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Hold-crossfade waveform: returns 0..1 as a function of time, holding at
+  // 0 for `holdFrac/2` of the cycle, smoothly fading to 1, holding at 1, then
+  // smoothly fading back. Reads as "morph A → hold → morph B → hold" rather
+  // than the rapid mid-blend flicker a raw sine produces.
+  function morphWave(now, period, holdFrac) {
+    const t = ((now * 0.001) % period) / period;
+    const half = holdFrac / 2;
+    if (t < half) return 0;
+    if (t < 0.5 - half) {
+      const f = (t - half) / (0.5 - 2 * half);
+      return f * f * (3 - 2 * f);
+    }
+    if (t < 0.5 + half) return 1;
+    if (t < 1 - half) {
+      const f = (t - 0.5 - half) / (0.5 - 2 * half);
+      return 1 - f * f * (3 - 2 * f);
+    }
+    return 0;
+  }
+
+  function drawCloud(orb, cx, cy, vizR, time, alpha, rotation) {
+    const breathe = 1 + 0.025 * Math.sin(time * 1.6);
+    const target = vizR * 2 * breathe;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    ctx.shadowColor = '#ffb347';
+    ctx.shadowBlur = 36;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(orb.canvas, -target / 2, -target / 2, target, target);
+    ctx.restore();
+  }
+
+  function drawDecayRing(vizR, inPulse) {
+    if (main.chainIdx === 0) return;
+    const remaining = 1 - main.decayT / DECAY_INTERVAL;
+    const ang0 = -Math.PI / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(main.x, main.y, vizR + 14, ang0, ang0 + Math.PI * 2 * remaining);
+    ctx.strokeStyle = inPulse ? '#ff8050' : 'rgba(255,179,71,0.35)';
+    ctx.lineWidth = inPulse ? 3 : 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMain(time, vizR, inPulse, now) {
+    drawDecayRing(vizR, inPulse);
+
+    // transitioning (eat or just-committed collapse): crossfade prev → curr.
+    if (main.prevOrbital && main.transitionT < 1) {
+      const e = main.transitionT;
+      const ease = e * e * (3 - 2 * e);
+      drawCloud(main.prevOrbital, main.x, main.y, vizR, time, 1 - ease, main.rotation);
+      drawCloud(orbitalAt(main.chainIdx), main.x, main.y, vizR, time, ease, main.rotation);
+      return;
+    }
+
+    // pulse phase: slowly morph between current and next-simpler state.
+    // Period shortens as collapse approaches; amplitude (how fully we swing
+    // to the simpler shape) grows. Each "hold" lets the eye read the shape
+    // before the morph continues.
+    if (inPulse) {
+      const pulsePhase = (main.decayT - (DECAY_INTERVAL - PULSE_PRE)) / PULSE_PRE;
+      const period = 3.5 - 1.5 * pulsePhase; // 3.5s calm → 2.0s urgent
+      const w = morphWave(now, period, 0.28);
+      const amp = 0.55 + 0.45 * pulsePhase; // 0.55 → 1.0
+      const bleed = amp * w;
+      // each orbital drawn at its own natural size so the visual size also
+      // morphs along with the shape
+      const vR_A = (62 + 18 * stateAt(main.chainIdx).n) * main.sizeScale;
+      const vR_B = (62 + 18 * stateAt(main.chainIdx - 1).n) * main.sizeScale;
+      drawCloud(orbitalAt(main.chainIdx),     main.x, main.y, vR_A, time, 1 - bleed, main.rotation);
+      drawCloud(orbitalAt(main.chainIdx - 1), main.x, main.y, vR_B, time, bleed,     main.rotation);
+      return;
+    }
+
+    drawCloud(orbitalAt(main.chainIdx), main.x, main.y, vizR, time, 1, main.rotation);
+  }
+
+  refreshHUD();
+  requestAnimationFrame(frame);
+
+  // ============================================================
+  // SSE — hand state
+  // ============================================================
+  function connect() {
+    const es = new EventSource('/stream');
+    es.onopen = () => { elStatus.textContent = 'connected'; elStatus.className = 'ok'; };
+    es.onerror = () => { elStatus.textContent = 'reconnecting…'; elStatus.className = 'dead'; };
+    es.onmessage = (ev) => {
+      try {
+        const s = JSON.parse(ev.data);
+        if (s.present) {
+          main.targetX = s.tip[0] * W;
+          main.targetY = s.tip[1] * H;
+          if (!warm) {
+            main.x = main.targetX; main.y = main.targetY;
+            main.vx = 0; main.vy = 0; warm = true;
+          }
+          main.sign = s.sign || '';
+          main.sizeScale = (s.sign === 'Pointer') ? 0.75 : 1.0;
+          elSign.textContent = s.sign || '—';
+          elGesture.textContent = s.gesture || '—';
+        }
+        elFPS.textContent = s.fps ? s.fps.toFixed(1) : '—';
+      } catch (e) { /* ignore */ }
+    };
+  }
+  connect();
+})();
+</script>
+</body>
+</html>
