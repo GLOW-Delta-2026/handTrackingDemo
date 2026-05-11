@@ -35,6 +35,11 @@ if [ ! -d "$BUILD_DIR/tensorflow" ]; then
 fi
 
 echo "==> Configuring TFLite C library"
+# Wipe any prior configure state. A previously failed configure can leave
+# half-fetched FetchContent deps (FP16-source exists but psimd-source missing,
+# etc.) that produce confusing follow-up errors on re-run. Cheap to redo;
+# the TensorFlow clone above is what's expensive, and that's preserved.
+rm -rf "$BUILD_DIR/out"
 mkdir -p "$BUILD_DIR/out"
 cd "$BUILD_DIR/out"
 cmake "$BUILD_DIR/tensorflow/tensorflow/lite/c" \
