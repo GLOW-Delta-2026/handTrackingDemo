@@ -58,38 +58,42 @@ The first run prompts for camera access — grant it.
 
 ## Setup — Windows
 
-Tested on Windows 11 with a built-in webcam. The whole flow runs inside the **MSYS2 MINGW64** shell — same script as macOS, no special env vars or copy-pasting headers.
+Tested on Windows 11 with a built-in webcam. The whole flow runs inside the **MSYS2 MINGW64** shell — same script as macOS, no PowerShell, no MSVC, no special env vars.
+
+> **Use the right terminal.** Install [MSYS2](https://www.msys2.org/), then launch **"MSYS2 MINGW64"** from the Start menu — *not* PowerShell, *not* "MSYS2 MSYS", *not* "MSYS2 UCRT64". The prompt should show `MINGW64` in green. Every command below runs in that shell.
 
 ```bash
-# 1. Install Go 1.23+:  https://go.dev/dl/
-# 2. Install MSYS2:     https://www.msys2.org/
-# 3. Open the "MSYS2 MINGW64" shell from the Start menu and install
-#    OpenCV + the toolchain (precompiled, takes 2–3 min):
+# 1. Install Go + OpenCV + toolchain (precompiled, ~3–5 min):
 pacman -S --needed \
+  mingw-w64-x86_64-go \
   mingw-w64-x86_64-toolchain \
   mingw-w64-x86_64-cmake \
   mingw-w64-x86_64-opencv \
   mingw-w64-x86_64-pkg-config \
   git
 
-# 4. Clone and build TFLite (~10–15 min one-time):
+# 2. Clone and build TFLite (~10–15 min one-time):
 git clone https://github.com/GLOW-Delta-2026/handTrackingDemo.git
 cd handTrackingDemo
 ./scripts/install-tflite.sh
 
-# 5. Build the demo:
+# 3. Build the demo:
 go build -o handtracking.exe .
 
-# 6. Windows has no rpath — copy the DLL next to the .exe:
+# 4. Windows has no rpath — copy the DLL next to the .exe:
 cp _third_party/tflite/lib/libtensorflowlite_c.dll .
 
-# 7. Run:
+# 5. Run:
 ./handtracking.exe
 ```
 
 Then open <http://localhost:8080>.
 
-> The MINGW64 shell is what you launch from Start (it shows `MINGW64` in the prompt), not the plain MSYS2 shell. The toolchain and pacman packages above are the MINGW64 builds.
+### Troubleshooting
+
+- **`go: command not found` or `'go' is not recognized`** — You're in the wrong terminal. Close it and open "MSYS2 MINGW64" from the Start menu. Confirm the prompt shows `MINGW64`. If `which go` still finds nothing inside MINGW64, you skipped `pacman -S mingw-w64-x86_64-go` above.
+- **`pkg-config: command not found`** — Same cause; you missed `mingw-w64-x86_64-pkg-config` in the pacman line.
+- **gocv `cannot find -lopencv_*`** — `mingw-w64-x86_64-opencv` didn't install. Re-run the pacman line.
 
 ---
 
