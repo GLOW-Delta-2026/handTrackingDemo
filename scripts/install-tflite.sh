@@ -56,11 +56,31 @@ echo "==> Configuring TFLite C library"
 # the TensorFlow clone above is what's expensive, and that's preserved.
 rm -rf "$BUILD_DIR/out"
 mkdir -p "$BUILD_DIR/out"
+
+# Pre-clone deps that FP16/cpuinfo etc. would otherwise try to download via
+# their own legacy EXECUTE_PROCESS+ExternalProject machinery. That nested
+# cmake invocation runs without our -DCMAKE_POLICY_VERSION_MINIMUM flag and
+# fails under CMake 4.x ("could not find CMAKE_PROJECT_NAME in Cache"),
+# which then surfaces as "ADD_SUBDIRECTORY given source .../psimd-source
+# which is not an existing directory". Setting the SOURCE_DIR variables makes
+# FP16's CMakeLists skip the download branch entirely.
+DEPS_DIR="$BUILD_DIR/deps"
+mkdir -p "$DEPS_DIR"
+clone_if_missing() {
+  local url="$1" dir="$2"
+  if [ ! -d "$DEPS_DIR/$dir" ]; then
+    echo "    Pre-cloning $dir"
+    git clone --depth 1 "$url" "$DEPS_DIR/$dir"
+  fi
+}
+clone_if_missing https://github.com/Maratyszcza/psimd.git psimd
+
 cd "$BUILD_DIR/out"
 cmake "$BUILD_DIR/tensorflow/tensorflow/lite/c" \
   -DCMAKE_BUILD_TYPE=Release \
   -DTFLITE_ENABLE_XNNPACK=ON \
-  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DPSIMD_SOURCE_DIR="$DEPS_DIR/psimd"
 
 echo "==> Building (this is the slow part)"
 if command -v nproc >/dev/null 2>&1; then NJOBS="$(nproc)"
