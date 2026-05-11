@@ -82,6 +82,32 @@ cmake "$BUILD_DIR/tensorflow/tensorflow/lite/c" \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DPSIMD_SOURCE_DIR="$DEPS_DIR/psimd"
 
+# Patch cpuinfo's Windows init.c for MinGW. The code calls max() expecting
+# it to come from Windows' windef.h, but the build defines -DNOMINMAX=1
+# which hides those macros. Drop in local definitions at the top of the file.
+PATCH_MARKER="/* GLOW_PATCH_MINMAX */"
+patch_cpuinfo_minmax() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  grep -q "GLOW_PATCH_MINMAX" "$f" && return 0
+  echo "    Patching $(basename "$f") for max()/min() on MinGW"
+  {
+    echo "$PATCH_MARKER"
+    echo "#ifndef max"
+    echo "#define max(a,b) (((a) > (b)) ? (a) : (b))"
+    echo "#endif"
+    echo "#ifndef min"
+    echo "#define min(a,b) (((a) < (b)) ? (a) : (b))"
+    echo "#endif"
+    cat "$f"
+  } > "$f.tmp" && mv "$f.tmp" "$f"
+}
+echo "==> Patching cpuinfo for MinGW max()/min() compat"
+for f in \
+  "$BUILD_DIR/out/cpuinfo/src/x86/windows/init.c"; do
+  patch_cpuinfo_minmax "$f"
+done
+
 echo "==> Building (this is the slow part)"
 if command -v nproc >/dev/null 2>&1; then NJOBS="$(nproc)"
 elif command -v sysctl >/dev/null 2>&1; then NJOBS="$(sysctl -n hw.ncpu)"
