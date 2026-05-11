@@ -98,6 +98,7 @@ pacman -S --needed \
   mingw-w64-x86_64-cmake \
   mingw-w64-x86_64-opencv \
   mingw-w64-x86_64-pkgconf \
+  make \
   git
 ```
 
@@ -118,18 +119,14 @@ cd handTrackingDemo
 Still inside **MSYS2 MINGW64**:
 
 ```bash
-go build -o handtracking.exe .
+make build
 ```
 
-### Step 4 — Copy the TFLite DLL next to the .exe
+This uses the cross-platform Makefile, which on Windows sets the right `-tags customenv` + cgo env vars for gocv and go-tflite, runs `go build`, and copies `libtensorflowlite_c.dll` next to the produced `handtracking.exe` (Windows has no rpath, so the DLL has to live in the same folder as the .exe).
 
-Windows has no rpath, so the DLL has to live in the same folder as the executable. Still inside **MSYS2 MINGW64**:
+> **Don't run a bare `go build` on Windows.** It will fail with `tensorflow/lite/c/c_api.h: No such file or directory` and `opencv2/opencv.hpp: No such file or directory` — gocv's default Windows cgo directives expect OpenCV at `C:/opencv/...`, not MSYS2's `/mingw64/...`, and `CGO_CPPFLAGS` is not set without the Makefile. Use `make build`.
 
-```bash
-cp _third_party/tflite/lib/libtensorflowlite_c.dll .
-```
-
-### Step 5 — Run
+### Step 4 — Run
 
 Still inside **MSYS2 MINGW64**:
 
@@ -146,6 +143,7 @@ Then open <http://localhost:8080> in any browser.
 - **`could not satisfy dependencies … mingw-w64-x86_64-pkg-config`** — Old package name. The current MSYS2 name is `mingw-w64-x86_64-pkgconf` (no hyphen). Use that.
 - **`failed to prepare transaction` / `could not satisfy dependencies`** — A fresh MSYS2 install ships with a stale package database. Run `pacman -Syu` first (twice if it asks you to close the terminal mid-way), then re-run the install line.
 - **gocv `cannot find -lopencv_*`** — `mingw-w64-x86_64-opencv` didn't install. Re-run the pacman line.
+- **`tensorflow/lite/c/c_api.h: No such file or directory`** and/or **`opencv2/opencv.hpp: No such file or directory`** during `go build` — you ran a bare `go build` instead of `make build`. The Makefile is what sets the cgo env vars (`CGO_CPPFLAGS`, `CGO_LDFLAGS`) and the `-tags customenv` flag that lets gocv look up OpenCV via MSYS2's `pkg-config`. Run `make build` instead. If `make: command not found`, install it with `pacman -S make`.
 
 ---
 
