@@ -12,8 +12,25 @@ ifneq ($(IS_WINDOWS),)
 EXE        := handtracking.exe
 BUILD_TAGS := -tags customenv
 
-CV_CFLAGS  := $(shell pkg-config --cflags opencv4)
-CV_LDFLAGS := $(shell pkg-config --libs opencv4)
+# Locate OpenCV. Prefer pkg-config (canonical); fall back to MSYS2's default
+# install prefix /mingw64 if pkg-config can't find the .pc file. If neither
+# works, abort with a clear message rather than letting gocv fail with a
+# confusing "opencv2/opencv.hpp: No such file or directory" downstream.
+CV_CFLAGS  := $(shell pkg-config --cflags opencv4 2>/dev/null)
+CV_LDFLAGS := $(shell pkg-config --libs opencv4 2>/dev/null)
+
+ifeq ($(strip $(CV_CFLAGS)),)
+  ifneq (,$(wildcard /mingw64/include/opencv4/opencv2/opencv.hpp))
+    CV_CFLAGS  := -I/mingw64/include/opencv4
+    CV_LDFLAGS := -L/mingw64/bin -L/mingw64/lib \
+      -lopencv_dnn -lopencv_video -lopencv_photo -lopencv_objdetect \
+      -lopencv_calib3d -lopencv_features2d -lopencv_videoio -lopencv_imgcodecs \
+      -lopencv_imgproc -lopencv_highgui -lopencv_core
+    $(warning pkg-config could not find opencv4; using MSYS2 fallback paths under /mingw64)
+  else
+    $(error OpenCV not found. Install it inside MSYS2 MINGW64 with: pacman -S --needed mingw-w64-x86_64-opencv mingw-w64-x86_64-pkgconf)
+  endif
+endif
 
 export CGO_CPPFLAGS := -I$(TFLITE_DIR)/include $(CV_CFLAGS)
 export CGO_CXXFLAGS := --std=c++11
