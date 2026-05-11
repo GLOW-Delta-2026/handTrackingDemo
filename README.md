@@ -58,18 +58,40 @@ The first run prompts for camera access — grant it.
 
 ## Setup — Windows
 
-Tested on Windows 11 with a built-in webcam. The whole flow runs inside the **MSYS2 MINGW64** shell — same script as macOS, no PowerShell, no MSVC, no special env vars.
+Tested on Windows 11 with a built-in webcam.
 
-> **Use the right terminal.** Install [MSYS2](https://www.msys2.org/), then launch **"MSYS2 MINGW64"** from the Start menu — *not* PowerShell, *not* "MSYS2 MSYS", *not* "MSYS2 UCRT64", *not* "MSYS2 CLANGARM64". The prompt should show `MINGW64` in green. Every command below runs in that shell.
+> ### ⚠️ Read this first — the shell matters
+>
+> **Every single command in this Windows section must be run inside the "MSYS2 MINGW64" shell.** Not PowerShell. Not Command Prompt. Not "MSYS2 MSYS", "MSYS2 UCRT64", "MSYS2 CLANG64", or "MSYS2 CLANGARM64".
+>
+> If you don't already have it: install [MSYS2](https://www.msys2.org/) (run the installer, accept the defaults). Then launch **"MSYS2 MINGW64"** from the Start menu. The prompt should look like this, with `MINGW64` in **green**:
+>
+> ```
+> user@machine MINGW64 ~
+> $
+> ```
+>
+> If your prompt says `MSYS`, `UCRT64`, `CLANG64`, `CLANGARM64`, or `PS C:\…>`, **stop** and open the correct shell before running anything below. Running these commands in any other terminal will fail with errors like `go: command not found`, missing libraries, or broken builds.
+
+### Step 0 — Refresh MSYS2 (only the first time after installing it)
+
+A fresh MSYS2 ships with a stale package database. Inside **MSYS2 MINGW64**:
 
 ```bash
-# 0. Refresh MSYS2 first — a fresh install ships with a stale package db.
-#    Run twice if it asks you to close the terminal mid-way:
 pacman -Syu
-# (close the shell if prompted, reopen MSYS2 MINGW64, then re-run pacman -Syu)
-pacman -Syu
+```
 
-# 1. Install Go + OpenCV + toolchain (precompiled, ~3–5 min):
+If it asks you to close the terminal mid-way, close it, reopen **MSYS2 MINGW64**, and run it again:
+
+```bash
+pacman -Syu
+```
+
+### Step 1 — Install Go + OpenCV + toolchain (~3–5 min)
+
+Still inside **MSYS2 MINGW64**:
+
+```bash
 pacman -S --needed \
   mingw-w64-x86_64-go \
   mingw-w64-x86_64-toolchain \
@@ -77,27 +99,49 @@ pacman -S --needed \
   mingw-w64-x86_64-opencv \
   mingw-w64-x86_64-pkgconf \
   git
+```
 
-# 2. Clone and build TFLite (~10–15 min one-time):
+> **Do not install Go via the Windows `.msi` from go.dev.** The MSYS2 MINGW64 shell has its own PATH and won't see a Windows-side Go install — `go` would still report "command not found". The `mingw-w64-x86_64-go` package above is the one that works here.
+
+### Step 2 — Clone the repo and build TFLite (~10–15 min one-time)
+
+Still inside **MSYS2 MINGW64**:
+
+```bash
 git clone https://github.com/GLOW-Delta-2026/handTrackingDemo.git
 cd handTrackingDemo
 ./scripts/install-tflite.sh
+```
 
-# 3. Build the demo:
+### Step 3 — Build the demo
+
+Still inside **MSYS2 MINGW64**:
+
+```bash
 go build -o handtracking.exe .
+```
 
-# 4. Windows has no rpath — copy the DLL next to the .exe:
+### Step 4 — Copy the TFLite DLL next to the .exe
+
+Windows has no rpath, so the DLL has to live in the same folder as the executable. Still inside **MSYS2 MINGW64**:
+
+```bash
 cp _third_party/tflite/lib/libtensorflowlite_c.dll .
+```
 
-# 5. Run:
+### Step 5 — Run
+
+Still inside **MSYS2 MINGW64**:
+
+```bash
 ./handtracking.exe
 ```
 
-Then open <http://localhost:8080>.
+Then open <http://localhost:8080> in any browser.
 
 ### Troubleshooting
 
-- **`go: command not found` or `'go' is not recognized`** — You're in the wrong terminal. Close it and open "MSYS2 MINGW64" from the Start menu. Confirm the prompt shows `MINGW64`. If `which go` still finds nothing inside MINGW64, you skipped `pacman -S mingw-w64-x86_64-go` above.
+- **`go: command not found` or `'go' is not recognized as a cmdlet…`** — Almost always means you're not in the MSYS2 MINGW64 shell. The prompt must read `MINGW64` (in green) — if it says `PS C:\…>` you're in PowerShell. Close it, open **MSYS2 MINGW64** from the Start menu, and re-run from there. If you confirmed you're in MINGW64 and it still says command not found, run `pacman -S mingw-w64-x86_64-go`. Installing Go through the Windows `.msi` from go.dev does **not** help here — MSYS2 has its own PATH.
 - **`pkg-config: command not found`** — Same cause; you missed `mingw-w64-x86_64-pkgconf` in the pacman line.
 - **`could not satisfy dependencies … mingw-w64-x86_64-pkg-config`** — Old package name. The current MSYS2 name is `mingw-w64-x86_64-pkgconf` (no hyphen). Use that.
 - **`failed to prepare transaction` / `could not satisfy dependencies`** — A fresh MSYS2 install ships with a stale package database. Run `pacman -Syu` first (twice if it asks you to close the terminal mid-way), then re-run the install line.
