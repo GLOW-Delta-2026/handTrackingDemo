@@ -108,6 +108,33 @@ for f in \
   patch_cpuinfo_minmax "$f"
 done
 
+# Strip MSVC-only compile flags from any CMakeLists that gates them with
+# bare if(WIN32) instead of if(MSVC). MinGW's g++ interprets flags like
+# /bigobj /nologo /EHsc as filenames and aborts. gemmlowp is the known
+# offender in TF v2.16.1 but the strip is safe for any other dep too —
+# the flags are MSVC-only and MinGW doesn't need them. We strip the flag
+# tokens themselves rather than the if-blocks because that's robust to
+# slight CMake formatting differences across deps.
+echo "==> Stripping MSVC-only flags from CMakeLists.txt files (MinGW compat)"
+case "$(uname -s)" in
+  MINGW*|MSYS*)
+    MSVC_FLAGS_RE='/bigobj|/nologo|/EHsc|/GF|/MP|/Gm-|/wd4800|/wd4805|/wd4244'
+    while IFS= read -r f; do
+      [ -f "$f" ] || continue
+      grep -q -E "$MSVC_FLAGS_RE" "$f" || continue
+      echo "    Stripping MSVC flags from $f"
+      sed -i -E "s#($MSVC_FLAGS_RE)##g" "$f"
+    done < <(find "$BUILD_DIR/out" -name CMakeLists.txt 2>/dev/null)
+
+    echo "==> Re-running cmake to regenerate build files with patched CMakeLists"
+    cmake "$BUILD_DIR/tensorflow/tensorflow/lite/c" \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DTFLITE_ENABLE_XNNPACK=ON \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DPSIMD_SOURCE_DIR="$DEPS_DIR/psimd"
+    ;;
+esac
+
 echo "==> Building (this is the slow part)"
 if command -v nproc >/dev/null 2>&1; then NJOBS="$(nproc)"
 elif command -v sysctl >/dev/null 2>&1; then NJOBS="$(sysctl -n hw.ncpu)"
