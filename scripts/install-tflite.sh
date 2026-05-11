@@ -39,7 +39,8 @@ mkdir -p "$BUILD_DIR/out"
 cd "$BUILD_DIR/out"
 cmake "$BUILD_DIR/tensorflow/tensorflow/lite/c" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DTFLITE_ENABLE_XNNPACK=ON
+  -DTFLITE_ENABLE_XNNPACK=ON \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
 echo "==> Building (this is the slow part)"
 if command -v nproc >/dev/null 2>&1; then NJOBS="$(nproc)"
