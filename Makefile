@@ -32,8 +32,13 @@ ifeq ($(strip $(CV_CFLAGS)),)
   endif
 endif
 
-export CGO_CPPFLAGS := -I$(TFLITE_DIR)/include $(CV_CFLAGS)
-export CGO_CXXFLAGS := --std=c++11
+# cgo splits include flags by compiler:
+#   CGO_CFLAGS    -> the C compiler (used for go-tflite's C glue)
+#   CGO_CXXFLAGS  -> the C++ compiler (used for gocv's .cpp wrappers)
+# Putting -I in CPPFLAGS alone is NOT enough: gocv's C++ files won't see it
+# and fail with "opencv2/opencv.hpp: No such file or directory".
+export CGO_CFLAGS   := -I$(TFLITE_DIR)/include
+export CGO_CXXFLAGS := --std=c++11 $(CV_CFLAGS)
 export CGO_LDFLAGS  := -L$(TFLITE_DIR)/lib -ltensorflowlite_c $(CV_LDFLAGS)
 else
 # ---- macOS / Linux ---------------------------------------------------------
