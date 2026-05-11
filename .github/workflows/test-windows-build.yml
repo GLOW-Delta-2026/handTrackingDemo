@@ -1,0 +1,87 @@
+name: Test Windows Build & Launch
+
+# Verifies that on a clean Windows + MSYS2 MINGW64 runner we can:
+#   1. Download the prebuilt TFLite DLL from the latest release (fast — no
+#      from-source TF build) and unpack the headers.
+#   2. Run `make build` to compile handtracking.exe with gocv + go-tflite.
+#   3. Launch the exe long enough to confirm all its runtime DLLs load
+#      successfully. Webcam access will fail on the runner (no camera) but
+#      that's expected — we're testing that DLL bundling is complete.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Makefile'
+      - '**/*.go'
+      - 'scripts/install-tflite.sh'
+      - '.github/workflows/test-windows-build.yml'
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-go
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-opencv
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-qt6-base
+            make
+            git
+
+      - name: Install TFLite (downloads from release)
+        run: ./scripts/install-tflite.sh
+
+      - name: Build handtracking.exe
+        run: make build
+
+      - name: List bundled runtime
+        run: |
+          echo "=== exe ==="
+          ls -la handtracking.exe
+          echo "=== bundled DLLs ==="
+          ls *.dll | sort
+          echo "=== plugin dirs ==="
+          for d in platforms imageformats styles; do
+            [ -d "$d" ] && echo "$d/:" && ls "$d/"
+          done
+
+      - name: Launch handtracking.exe (timeout 8s — webcam will fail, that's fine)
+        run: |
+          set +e
+          # Run with timeout. On success (no webcam, exe runs to webcam-open and
+          # either fails or hangs), we'll either get a non-fatal exit or a 124
+          # timeout. The error we WANT to catch is a missing DLL load failure,
+          # which Windows reports as exit code 3221225781 (= 0xC0000135 =
+          # STATUS_DLL_NOT_FOUND).
+          timeout --kill-after=2 8 ./handtracking.exe -http-addr "" 2>&1
+          EXIT=$?
+          echo
+          echo "=== exit code: $EXIT ==="
+          case $EXIT in
+            124|137)
+              echo "PASS: exe ran for the full timeout window (DLLs loaded; webcam loop is alive)"
+              ;;
+            3221225781|3221225595|127)
+              echo "FAIL: missing DLL or load failure (STATUS_DLL_NOT_FOUND / bad image)"
+              exit 1
+              ;;
+            *)
+              echo "exe exited with $EXIT before the timeout."
+              echo "If this is a webcam-open failure, that's expected on CI (no camera)."
+              echo "If you see 'cannot find -lopencv_*' or a DLL name in the output above,"
+              echo "the bundling is incomplete and we need to fix it."
+              ;;
+          esac
