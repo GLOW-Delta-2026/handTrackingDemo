@@ -58,62 +58,38 @@ The first run prompts for camera access — grant it.
 
 ## Setup — Windows
 
-Tested on Windows 11 with a built-in webcam.
+Tested on Windows 11 with a built-in webcam. The whole flow runs inside the **MSYS2 MINGW64** shell — same script as macOS, no special env vars or copy-pasting headers.
 
-### Prerequisites
+```bash
+# 1. Install Go 1.23+:  https://go.dev/dl/
+# 2. Install MSYS2:     https://www.msys2.org/
+# 3. Open the "MSYS2 MINGW64" shell from the Start menu and install
+#    OpenCV + the toolchain (precompiled, takes 2–3 min):
+pacman -S --needed \
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-opencv \
+  mingw-w64-x86_64-pkg-config \
+  git
 
-1. **Go 1.23+** — <https://go.dev/dl/>
-2. **Visual Studio Build Tools 2022** with the "Desktop development with C++" workload — <https://aka.ms/vs/17/release/vs_BuildTools.exe>
-3. **CMake** — <https://cmake.org/download/> (tick "Add to PATH" during install)
-4. **Git** — <https://git-scm.com/download/win>
-5. **MinGW-w64** — easiest via [MSYS2](https://www.msys2.org/), then `pacman -S mingw-w64-x86_64-toolchain`. gocv on Windows links through MinGW.
+# 4. Clone and build TFLite (~10–15 min one-time):
+git clone https://github.com/GLOW-Delta-2026/handTrackingDemo.git
+cd handTrackingDemo
+./scripts/install-tflite.sh
 
-### 1. OpenCV (via gocv installer)
-
-[gocv](https://gocv.io) ships a PowerShell helper that downloads and builds a pinned OpenCV. From an **admin PowerShell**:
-
-```powershell
-git clone https://github.com/hybridgroup/gocv.git $env:USERPROFILE\gocv
-cd $env:USERPROFILE\gocv
-.\win_build_opencv.cmd
-```
-
-It places DLLs under `C:\opencv\build\install\x64\mingw\bin`. Add that directory to your **User PATH**.
-
-### 2. TFLite C library
-
-The macOS shell script doesn't work on Windows, but the same CMake recipe does. From a **"x64 Native Tools Command Prompt for VS 2022"**:
-
-```cmd
-cd %USERPROFILE%
-git clone --depth 1 --branch v2.16.1 https://github.com/tensorflow/tensorflow.git tf
-mkdir tflite-build && cd tflite-build
-cmake %USERPROFILE%\tf\tensorflow\lite\c -DCMAKE_BUILD_TYPE=Release -DTFLITE_ENABLE_XNNPACK=ON
-cmake --build . --config Release -j
-```
-
-When it finishes:
-
-1. Copy `Release\tensorflowlite_c.dll` (and `tensorflowlite_c.lib`) to `<repo>\_third_party\tflite\lib\`.
-2. Copy the header tree: every `*.h` under `%USERPROFILE%\tf\tensorflow\lite\` into `<repo>\_third_party\tflite\include\tensorflow\lite\`, preserving directory layout.
-
-### 3. Build the demo
-
-From a Developer Command Prompt at the repo root:
-
-```cmd
-set CGO_CFLAGS=-I%CD%\_third_party\tflite\include
-set CGO_LDFLAGS=-L%CD%\_third_party\tflite\lib -ltensorflowlite_c
+# 5. Build the demo:
 go build -o handtracking.exe .
+
+# 6. Windows has no rpath — copy the DLL next to the .exe:
+cp _third_party/tflite/lib/libtensorflowlite_c.dll .
+
+# 7. Run:
+./handtracking.exe
 ```
 
-Either copy `tensorflowlite_c.dll` next to `handtracking.exe`, or add `_third_party\tflite\lib` to PATH. Then:
+Then open <http://localhost:8080>.
 
-```cmd
-handtracking.exe
-```
-
-Open <http://localhost:8080> in any browser.
+> The MINGW64 shell is what you launch from Start (it shows `MINGW64` in the prompt), not the plain MSYS2 shell. The toolchain and pacman packages above are the MINGW64 builds.
 
 ---
 
