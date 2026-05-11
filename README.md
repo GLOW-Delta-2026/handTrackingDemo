@@ -106,9 +106,12 @@ pacman -S --needed \
 
 ### Step 2 — Clone the repo and build TFLite (~10–15 min one-time)
 
+> **The repo path must not contain spaces.** TensorFlow's older third-party CMake build scripts (FP16's `DownloadPSimd.cmake` and friends) don't quote paths, so a space anywhere in the path silently breaks the nested CMake invocation that downloads `psimd`, and the build fails later with `ADD_SUBDIRECTORY given source ".../psimd-source" which is not an existing directory`. Clone somewhere like `C:/glow/handTrackingDemo` or your home directory — **not** under a path like `Semester 6/...`.
+
 Still inside **MSYS2 MINGW64**:
 
 ```bash
+cd /c/glow              # or any path without spaces
 git clone https://github.com/GLOW-Delta-2026/handTrackingDemo.git
 cd handTrackingDemo
 ./scripts/install-tflite.sh
@@ -144,7 +147,7 @@ Then open <http://localhost:8080> in any browser.
 - **`failed to prepare transaction` / `could not satisfy dependencies`** — A fresh MSYS2 install ships with a stale package database. Run `pacman -Syu` first (twice if it asks you to close the terminal mid-way), then re-run the install line.
 - **gocv `cannot find -lopencv_*`** — `mingw-w64-x86_64-opencv` didn't install. Re-run the pacman line.
 - **CMake error during `./scripts/install-tflite.sh`: `Compatibility with CMake < 3.5 has been removed`** (typically in `FP16-source/CMakeLists.txt`) — modern CMake (4.x, the version MSYS2 ships now) refuses TensorFlow v2.16.1's older third-party deps. The install script already passes `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` to work around this; if you cloned before that fix, run `git pull` and re-run `./scripts/install-tflite.sh`.
-- **CMake error: `ADD_SUBDIRECTORY given source "…/psimd-source" which is not an existing directory`** — left over from a prior failed configure where FetchContent fetched some deps but not others. The install script now wipes `_third_party/tflite-build/out` on every run to prevent this; if you hit it on an older script, run `git pull` and re-run, or wipe it manually: `rm -rf _third_party/tflite-build/out`.
+- **CMake error: `ADD_SUBDIRECTORY given source "…/psimd-source" which is not an existing directory`** — almost always means **your repo path contains a space**. TensorFlow's older third-party CMake scripts (FP16's `DownloadPSimd.cmake`) don't quote paths, so a space anywhere in the path breaks the nested CMake invocation that fetches `psimd`. Move the repo to a path without spaces (`C:/glow/handTrackingDemo`, your home dir, etc.) and re-run `./scripts/install-tflite.sh`. The install script now refuses to run from a path with spaces, so you get a clear error early instead of this confusing one.
 - **`tensorflow/lite/c/c_api.h: No such file or directory`** and/or **`opencv2/opencv.hpp: No such file or directory`** during `go build` — you ran a bare `go build` instead of `make build`. The Makefile is what sets the cgo env vars (`CGO_CPPFLAGS`, `CGO_LDFLAGS`) and the `-tags customenv` flag that lets gocv look up OpenCV via MSYS2's `pkg-config`. Run `make build` instead. If `make: command not found`, install it with `pacman -S make`.
 
 ---
