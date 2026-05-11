@@ -22,6 +22,42 @@ VENDOR="$REPO_ROOT/_third_party/tflite"
 BUILD_DIR="$REPO_ROOT/_third_party/tflite-build"
 TF_VERSION="${TF_VERSION:-v2.16.1}"
 
+# On Windows, building TFLite from source under MSYS2 MINGW64 is brittle
+# (CMake 4.x policy issues, FP16's broken nested downloader, MSVC-only flags
+# in deps' CMakeLists, cpuinfo using max() without windows.h macros, etc.).
+# Try downloading a prebuilt DLL + headers from our GitHub release first.
+# If that fails (no release yet, or user wants to build from source), fall
+# back to the source build below — which has all known workarounds applied
+# but is not guaranteed to succeed on every machine.
+case "$(uname -s)" in
+  MINGW*|MSYS*)
+    if [ "${TFLITE_BUILD_FROM_SOURCE:-0}" != "1" ]; then
+      RELEASE_URL="https://github.com/GLOW-Delta-2026/handTrackingDemo/releases/latest/download"
+      DLL_URL="$RELEASE_URL/libtensorflowlite_c.dll"
+      HDR_URL="$RELEASE_URL/tflite-headers.tar.gz"
+      mkdir -p "$VENDOR/lib" "$VENDOR/include"
+      tmp_dll="$(mktemp)"; tmp_hdr="$(mktemp)"
+      echo "==> Downloading prebuilt TFLite (Windows)"
+      echo "    $DLL_URL"
+      if curl -fsSL -o "$tmp_dll" "$DLL_URL" && curl -fsSL -o "$tmp_hdr" "$HDR_URL"; then
+        mv "$tmp_dll" "$VENDOR/lib/$LIB_NAME"
+        tar -xzf "$tmp_hdr" -C "$VENDOR/include"
+        rm -f "$tmp_hdr"
+        echo
+        echo "==> Done (downloaded prebuilt)."
+        echo "    Library at: $VENDOR/lib/$LIB_NAME"
+        echo "    Headers at: $VENDOR/include"
+        echo
+        echo "Next: run \`make build\` to compile the Go binary."
+        exit 0
+      fi
+      rm -f "$tmp_dll" "$tmp_hdr"
+      echo "    Prebuilt download failed (no release yet?). Falling back to source build." >&2
+      echo "    To force source build in the future: TFLITE_BUILD_FROM_SOURCE=1 ./scripts/install-tflite.sh" >&2
+    fi
+    ;;
+esac
+
 # Spaces in the path break TF's older third-party CMake scripts (FP16's
 # DownloadPSimd.cmake et al. don't quote paths, so the nested cmake invocation
 # silently fails, then ADD_SUBDIRECTORY blows up on the missing psimd-source).

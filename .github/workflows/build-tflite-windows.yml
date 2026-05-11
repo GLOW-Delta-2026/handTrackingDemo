@@ -1,0 +1,65 @@
+name: Build TFLite Windows DLL
+
+# Builds libtensorflowlite_c.dll for Windows on an MSYS2 MINGW64 runner and
+# attaches it (plus headers) to a GitHub release. Windows users then download
+# this prebuilt DLL via scripts/install-tflite.sh rather than compiling
+# TensorFlow from source themselves (which is brittle: see the various
+# patches in scripts/install-tflite.sh).
+#
+# Trigger: manually via "Run workflow" in the Actions tab, or by pushing
+# a tag like `tflite-v1`, `tflite-v2`, etc.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'tflite-*'
+
+permissions:
+  contents: write   # needed to create releases
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-pkgconf
+            make
+            git
+
+      - name: Build TFLite C library
+        run: ./scripts/install-tflite.sh
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          cp _third_party/tflite/lib/libtensorflowlite_c.dll dist/
+          tar -czf dist/tflite-headers.tar.gz -C _third_party/tflite/include .
+          ls -la dist/
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tflite-windows-mingw64
+          path: dist/
+          retention-days: 30
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/tflite-')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/libtensorflowlite_c.dll
+            dist/tflite-headers.tar.gz
+          generate_release_notes: true

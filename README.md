@@ -104,9 +104,9 @@ pacman -S --needed \
 
 > **Do not install Go via the Windows `.msi` from go.dev.** The MSYS2 MINGW64 shell has its own PATH and won't see a Windows-side Go install — `go` would still report "command not found". The `mingw-w64-x86_64-go` package above is the one that works here.
 
-### Step 2 — Clone the repo and build TFLite (~10–15 min one-time)
+### Step 2 — Clone the repo and download TFLite (~30 seconds)
 
-> **The repo path must not contain spaces.** TensorFlow's older third-party CMake build scripts (FP16's `DownloadPSimd.cmake` and friends) don't quote paths, so a space anywhere in the path silently breaks the nested CMake invocation that downloads `psimd`, and the build fails later with `ADD_SUBDIRECTORY given source ".../psimd-source" which is not an existing directory`. Clone somewhere like `C:/glow/handTrackingDemo` or your home directory — **not** under a path like `Semester 6/...`.
+> **The repo path must not contain spaces.** Some of the local fallback build scripts (FP16, etc.) don't handle paths with spaces well, so clone somewhere like `C:/glow/handTrackingDemo` or your home directory — **not** under a path like `Semester 6/...`.
 
 Still inside **MSYS2 MINGW64**:
 
@@ -116,6 +116,8 @@ git clone https://github.com/GLOW-Delta-2026/handTrackingDemo.git
 cd handTrackingDemo
 ./scripts/install-tflite.sh
 ```
+
+`install-tflite.sh` on Windows downloads a prebuilt `libtensorflowlite_c.dll` (built by GitHub Actions on a clean MSYS2 MINGW64 runner) plus the matching headers from the latest [GitHub release](https://github.com/GLOW-Delta-2026/handTrackingDemo/releases). This avoids the ~15-minute TensorFlow source build that's brittle on MinGW (CMake 4.x policy issues, MSVC-only flags in third-party CMakeLists, etc.). If the download fails for any reason, the script automatically falls back to a from-source build with all known workarounds applied. To force a from-source build: `TFLITE_BUILD_FROM_SOURCE=1 ./scripts/install-tflite.sh`.
 
 ### Step 3 — Build the demo
 
